@@ -7,15 +7,14 @@
 
 HaltProof is an emergency-shutdown **orchestration** and **cryptographic
 audit-proof** layer for compute clusters. It does not implement a new
-low-level shutdown mechanism — it coordinates cluster primitives you
-already trust (Slurm, Kubernetes, IPMI/BMC) and produces a signed,
-tamper-evident record of exactly what was targeted, what ran, and who
-authorized it.
+low-level shutdown mechanism. It coordinates cluster primitives you already
+trust (Slurm, Kubernetes, IPMI/BMC) and produces a signed, tamper-evident
+record of exactly what was targeted, what ran, and who authorized it.
 
 Use it for incident response, change-management evidence, and compliance
-reporting — for example, generating an auditable "human oversight" trail
-for compute infrastructure actions, the kind of evidence required by
-frameworks like the EU AI Act's human-oversight provisions.
+reporting: for example, generating an auditable "human oversight" trail for
+compute infrastructure actions, the kind of evidence required by frameworks
+like the EU AI Act's human-oversight provisions.
 
 ## Why
 
@@ -25,15 +24,15 @@ usually missing is:
 
 1. **One consistent interface** across those tools during an incident,
    instead of three different command sets under pressure.
-2. **A dry-run-by-default safety rail**, so a mistyped target group
-   doesn't take down the wrong nodes.
-3. **A signed record** of what happened — who ran it, what commands were
-   issued, against which nodes, and whether each step succeeded — that
-   survives being handed to an auditor or incident review board.
+2. **A dry-run-by-default safety rail**, so a mistyped target group doesn't
+   take down the wrong nodes.
+3. **A signed, tamper-evident record** of what happened: who ran it, what
+   commands were issued, against which nodes, whether each step succeeded,
+   and whether the record itself has been altered or has a piece missing.
 
 HaltProof is that layer. It calls out to `scontrol`, `kubectl`, and
-`ipmitool` (or `mcp`-invokable equivalents) and wraps every invocation in
-an Ed25519-signed attestation.
+`ipmitool` (or `mcp`-invokable equivalents) and wraps every invocation in an
+Ed25519-signed, hash-chained attestation.
 
 ## Install
 
@@ -50,10 +49,9 @@ npm install -g haltproof-cli
 ```
 
 The npm package requires the Python `haltproof-cli` package to already be
-installed and on `PATH`; it is a thin `execFileSync` wrapper, not a
-reimplementation. If it can't find the Python CLI, it prints an
-actionable error and exits non-zero rather than silently doing something
-else.
+installed and on `PATH`. It is a thin `execFileSync` wrapper, not a
+reimplementation. If it can't find the Python CLI, it prints an actionable
+error and exits non-zero rather than silently doing something else.
 
 ## Quickstart
 
@@ -72,6 +70,11 @@ haltproof halt gpu-pod-a --nodes node-1,node-2 --confirm
 
 # Verify a past attestation's signature and print its timeline.
 haltproof verify 1
+
+# Verify the entire attestation log's hash chain is intact, not just
+# one record: catches a deleted or reordered entry that a single-record
+# signature check alone would miss.
+haltproof verify --chain --attestation-log ~/.local/share/haltproof/attestations.jsonl
 ```
 
 Every command also supports `--json` for structured, agent-parseable
@@ -86,14 +89,14 @@ haltproof halt gpu-pod-a --nodes node-1 --json
 
 `haltproof halt` never executes anything destructive unless you pass
 `--confirm`. Without it, HaltProof prints exactly which commands it would
-run, against which nodes, in what order — and still writes a signed
+run, against which nodes, in what order, and still writes a signed
 attestation record of that dry-run plan, so "what would have happened" is
 also auditable.
 
 ### Config file (optional)
 
-Target groups, the preferred backend, and default paths can be defined in
-a `haltproof.toml` file (in the current directory, at
+Target groups, the preferred backend, and default paths can be defined in a
+`haltproof.toml` file (in the current directory, at
 `~/.config/haltproof/config.toml`, or at a path given by `--config` /
 `HALTPROOF_CONFIG`):
 
@@ -114,6 +117,29 @@ user = "admin"
 
 Every config value has a corresponding CLI flag, and an explicit flag
 always wins over the config file.
+
+## Comparison
+
+HaltProof doesn't compete with Slurm, Kubernetes, or IPMI. It sits on top
+of the tools operators already use for exactly this job and adds what none
+of them provide on their own: one interface, one safety gate, and a signed
+record.
+
+| Capability | HaltProof | `kubectl` (native) | `scontrol` (native) | `ipmitool` (native) |
+|---|---|---|---|---|
+| Single command across Slurm + Kubernetes + IPMI | Yes | No, Kubernetes only | No, Slurm only | No, IPMI only |
+| Consistent dry-run gate before any backend executes | Yes, one `--confirm` flag for all three backends | Partial: `--dry-run=client` validates syntax only, not real cluster mutation | No built-in simulate mode; `state=drain` takes effect immediately | No dry-run concept for power commands |
+| Cryptographically signed record of what ran | Yes, Ed25519 | No | No | No |
+| Detects a deleted or reordered record in the audit trail | Yes, hash-chained log | No | No | No |
+| Structured JSON output for every action | Yes, every command | Partial: `-o json` covers read/get commands, not the `drain`/`cordon` action result | No, plain text only | No, plain text only |
+| MCP server for direct AI agent invocation | Yes | No | No | No |
+
+A live GitHub search (2026-08-03) found no existing open-source project
+combining unified multi-backend orchestration, a dry-run-by-default gate,
+and a cryptographically signed, hash-chained audit trail for cluster
+shutdown operations. The closest adjacent projects target a different
+layer entirely: behavioral/alignment research on model outputs, not
+infrastructure-level shutdown orchestration with an audit trail.
 
 ## CLI command reference
 
@@ -143,18 +169,25 @@ Options:
   --json                   Shorthand for --format=json.
 ```
 
-### `haltproof verify ATTESTATION_REF`
+### `haltproof verify [ATTESTATION_REF]`
 
-Verify the signature of an attestation record and print its timeline.
+Verify an attestation record's signature, or an entire log's hash chain.
+
 `ATTESTATION_REF` is either a path to a file containing the record, or an
-attestation id / sequence number to look up in the attestation log.
+attestation id / sequence number to look up in the attestation log. Pass
+`--chain` instead of `ATTESTATION_REF` to verify that a whole
+`--attestation-log` is intact: every record's signature holds, sequence
+numbers have no gaps, and no record has been deleted or reordered.
 
 ```
 Options:
   --attestation-log TEXT  Path to the attestation log to search when
-                          ATTESTATION_REF is an id or sequence number.
+                          ATTESTATION_REF is an id or sequence number, or
+                          to verify with --chain.
   --trusted-key TEXT      Path to a trusted Ed25519 public key; if given, the
                           record's signing key must match it.
+  --chain                 Verify the full hash chain of --attestation-log
+                          instead of a single record.
   --format [human|json]   Output format.
   --json                  Shorthand for --format=json.
 ```
@@ -191,20 +224,20 @@ Options:
 ### `haltproof mcp-server`
 
 Starts the HaltProof MCP server on stdio transport, exposing `halt`,
-`verify`, `status`, and `keygen` as MCP tools for an AI agent to invoke
-programmatically.
+`verify`, `verify_chain`, `status`, and `keygen` as MCP tools for an AI
+agent to invoke programmatically.
 
 ## Architecture
 
 HaltProof has three layers:
 
-1. **Transport layer** — the Click-based CLI (`haltproof.cli`) and the
-   MCP server (`haltproof.mcp_server`). Both are thin wrappers over the
-   same core functions in `haltproof.core`, so a human running the CLI
-   and an agent calling the MCP tool get identical behavior — including
-   the dry-run-by-default gate on `halt`.
+1. **Transport layer**: the Click-based CLI (`haltproof.cli`) and the MCP
+   server (`haltproof.mcp_server`). Both are thin wrappers over the same
+   core functions in `haltproof.core`, so a human running the CLI and an
+   agent calling the MCP tool get identical behavior, including the
+   dry-run-by-default gate on `halt`.
 
-2. **Backend layer** — a `ClusterBackend` abstract interface
+2. **Backend layer**: a `ClusterBackend` abstract interface
    (`haltproof.backends.base`) with four operations:
 
    ```
@@ -228,49 +261,55 @@ HaltProof has three layers:
    against a mixed environment still produces one complete, honest
    attestation record. Adding support for a new scheduler or fencing tool
    means adding one new backend module and registering it in
-   `haltproof.backends.detect` — not touching the orchestration or
+   `haltproof.backends.detect`, not touching the orchestration or
    attestation layers.
 
    Backend selection: an explicit `--backend` flag wins, then the config
    file's `backend` key, then auto-detection based on which of
    `kubectl`/`scontrol`/`ipmitool` is found on `PATH`.
 
-3. **Attestation layer** (`haltproof.attestation`) — every halt operation
-   (dry-run or real) produces one signed record and appends it to a local
-   append-only newline-delimited-JSON log.
+3. **Attestation layer** (`haltproof.attestation`): every halt operation
+   (dry-run or real) produces one signed, hash-chained record and appends
+   it to a local append-only newline-delimited-JSON log.
 
 ## Security model
 
-- **Signing.** Attestation records are signed with Ed25519
-  (`cryptography` library). The record's signing public key is embedded
-  in the record itself (public keys aren't secret), so `haltproof verify`
-  can check internal signature validity on its own. Pass `--trusted-key`
-  to additionally require the record be signed by one specific known
-  operator key.
-- **Tamper evidence.** Signing covers the entire record (operator,
-  target nodes, every step's command and status, timestamps) except the
-  signature field itself. Changing any field — including hiding a
-  failed step or rewriting who authorized the halt — invalidates the
-  signature.
-- **Key handling.** `haltproof keygen` writes the private key with
-  `0600` permissions and never prints or logs key material, in CLI
-  output, JSON output, or the MCP tool result. Treat the private key like
-  an SSH private key: back it up somewhere access-controlled, and rotate
-  it if you suspect exposure. Anyone holding it can sign records that
-  verify as coming from you.
+- **Signing.** Attestation records are signed with Ed25519 (`cryptography`
+  library). The record's signing public key is embedded in the record
+  itself (public keys aren't secret), so `haltproof verify` can check
+  internal signature validity on its own. Pass `--trusted-key` to
+  additionally require the record be signed by one specific known operator
+  key.
+- **Tamper evidence, per record.** Signing covers the entire record
+  (operator, target nodes, every step's command and status, timestamps,
+  the chain link described below) except the signature field itself.
+  Changing any field, including hiding a failed step or rewriting who
+  authorized the halt, invalidates the signature.
+- **Tamper evidence, across the log.** A signature alone only proves one
+  record's own content is unaltered. It says nothing about whether a
+  record was deleted from the log or reordered. Every record embeds
+  `prev_hash`, the content hash of the record immediately before it, so
+  `haltproof verify --chain` can confirm sequence numbers have no gaps and
+  every link in the chain matches, catching a deleted or reordered record
+  even though its neighbors' individual signatures still hold on their
+  own.
+- **Key handling.** `haltproof keygen` writes the private key with `0600`
+  permissions and never prints or logs key material, in CLI output, JSON
+  output, or the MCP tool result. Treat the private key like an SSH
+  private key: back it up somewhere access-controlled, and rotate it if
+  you suspect exposure. Anyone holding it can sign records that verify as
+  coming from you.
 - **BMC credentials.** The IPMI backend reads the BMC password from the
   `IPMI_PASSWORD` environment variable and passes `ipmitool -E`, so it
-  never appears as a command-line argument, in the process list, or in
-  the attestation record's logged command.
-- **Dry-run by default.** `haltproof halt` requires an explicit
-  `--confirm` to execute anything destructive. This is enforced at a
-  single chokepoint (`haltproof.backends.runner.run_step`) that every
-  backend routes through, not re-implemented per backend.
+  never appears as a command-line argument, in the process list, or in the
+  attestation record's logged command.
+- **Dry-run by default.** `haltproof halt` requires an explicit `--confirm`
+  to execute anything destructive. This is enforced at a single chokepoint
+  (`haltproof.backends.runner.run_step`) that every backend routes
+  through, not re-implemented per backend.
 - **Operator identity.** Recorded from (in order) an explicit
   `--operator-id`, an SSH certificate identity if the environment exposes
   one, or the OS user running the command.
-
-<!-- TODO: benchmark comparison table -->
 
 ## MCP server (for AI agents)
 
@@ -278,11 +317,56 @@ HaltProof has three layers:
 haltproof mcp-server
 ```
 
-Starts an MCP server on stdio exposing `halt`, `verify`, `status`, and
-`keygen` as tools, built on the official `mcp` Python SDK. An agent
-connected over MCP gets the same dry-run-by-default `halt` behavior and
-the same JSON-shaped results as the CLI's `--json` mode — the CLI and the
-MCP server call the same underlying functions in `haltproof.core`.
+Starts an MCP server on stdio exposing `halt`, `verify`, `verify_chain`,
+`status`, and `keygen` as tools, built on the official `mcp` Python SDK. An
+agent connected over MCP gets the same dry-run-by-default `halt` behavior
+and the same JSON-shaped results as the CLI's `--json` mode: the CLI and
+the MCP server call the same underlying functions in `haltproof.core`.
+
+## FAQ
+
+**Does HaltProof actually cut power or network access itself?**
+No. It calls `scontrol`, `kubectl`, and `ipmitool`, tools you already run
+and trust, and wraps each invocation in a dry-run gate and a signed
+record. HaltProof adds orchestration and proof, not a new low-level
+shutdown mechanism.
+
+**What happens if a node's underlying tool isn't installed?**
+The relevant backend reports that step as `failed` with the actual error
+(for example, `executable not found`), and the attestation record still
+gets written and signed, so the failure itself is part of the auditable
+history.
+
+**Can I use HaltProof without signing attestations?**
+Yes, `--no-sign` skips signing but still writes the record to the log.
+This is meant for local testing, not production incident response, since
+an unsigned record can't be verified as authentic.
+
+**Does the attestation log need a central server?**
+No. It's a local, append-only NDJSON file by default. `--remote-collector`
+optionally POSTs each signed record to a URL you configure, for teams that
+want a central copy, but nothing about verification depends on that
+server being reachable.
+
+**How is this different from just writing a runbook or Ansible playbook?**
+A runbook or playbook can call the same underlying tools, but it doesn't
+produce a cryptographically signed, tamper-evident record of what actually
+ran on its own. You would need to build that logging and signing layer
+yourself. HaltProof ships it as the default behavior.
+
+**What happens if two operators run `halt` at the same time against the
+same attestation log?**
+Appends are file-locked (`fcntl.flock` on POSIX) so writes don't
+interleave, but sequence numbers are assigned by reading the log at the
+moment each command starts. Point both operators at backend-specific or
+per-incident log files if you need strict per-operation serialization.
+
+**Is this an "AI safety kill switch"?**
+No. HaltProof is infrastructure incident-response and compliance-audit
+tooling for cluster operators. It has no opinion on AI model behavior and
+makes no claims about AI safety or alignment. It orchestrates existing
+shutdown primitives and proves what ran, the same way it would for a
+non-AI workload.
 
 ## Development
 
