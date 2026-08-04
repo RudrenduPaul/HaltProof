@@ -191,6 +191,80 @@ def test_verify_tampered_file_fails(tmp_path, signing_key_path):
     assert verify_result.exit_code == 1
 
 
+def test_verify_chain_intact_across_multiple_halts(tmp_path, signing_key_path):
+    runner = CliRunner()
+    log_path = tmp_path / "att.jsonl"
+    with patch("haltproof.backends.kubernetes.KubernetesBackend.drain", side_effect=_fake_drain), \
+         patch("haltproof.backends.kubernetes.KubernetesBackend.isolate_network", side_effect=_fake_noop), \
+         patch("haltproof.backends.kubernetes.KubernetesBackend.power_fence", side_effect=_fake_noop):
+        for _ in range(3):
+            runner.invoke(
+                cli,
+                [
+                    "halt",
+                    "gpu-pod-a",
+                    "--nodes",
+                    "node-1",
+                    "--backend",
+                    "kubernetes",
+                    "--attestation-log",
+                    str(log_path),
+                    "--attestation-key",
+                    str(signing_key_path),
+                    "--json",
+                ],
+            )
+
+    result = runner.invoke(cli, ["verify", "--chain", "--attestation-log", str(log_path), "--json"])
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["valid"] is True
+    assert data["record_count"] == 3
+
+
+def test_verify_chain_detects_deleted_record(tmp_path, signing_key_path):
+    runner = CliRunner()
+    log_path = tmp_path / "att.jsonl"
+    with patch("haltproof.backends.kubernetes.KubernetesBackend.drain", side_effect=_fake_drain), \
+         patch("haltproof.backends.kubernetes.KubernetesBackend.isolate_network", side_effect=_fake_noop), \
+         patch("haltproof.backends.kubernetes.KubernetesBackend.power_fence", side_effect=_fake_noop):
+        for _ in range(3):
+            runner.invoke(
+                cli,
+                [
+                    "halt",
+                    "gpu-pod-a",
+                    "--nodes",
+                    "node-1",
+                    "--backend",
+                    "kubernetes",
+                    "--attestation-log",
+                    str(log_path),
+                    "--attestation-key",
+                    str(signing_key_path),
+                    "--json",
+                ],
+            )
+
+    lines = log_path.read_text().strip().splitlines()
+    log_path.write_text("\n".join([lines[0], lines[2]]) + "\n")  # drop the middle record
+
+    result = runner.invoke(cli, ["verify", "--chain", "--attestation-log", str(log_path), "--json"])
+
+    assert result.exit_code == 1
+    data = json.loads(result.output)
+    assert data["valid"] is False
+    assert "sequence gap" in data["error"]
+
+
+def test_verify_without_ref_or_chain_errors():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["verify"])
+    assert result.exit_code != 0
+    assert "--chain" in result.output
+
+
 def test_status_json_shape():
     runner = CliRunner()
     with patch(

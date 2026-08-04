@@ -112,9 +112,10 @@ def run_halt(
     operator = resolve_operator_id(operator_id or config.operator_id)
     log_path = Path(attestation_log_path or config.attestation_log_path or DEFAULT_ATTESTATION_LOG)
     attestation_log = AttestationLog(log_path)
+    next_seq, prev_hash = attestation_log.chain_state()
 
     record = build_record(
-        seq=attestation_log.next_seq(),
+        seq=next_seq,
         operator=operator,
         action="halt",
         target_group=target_group,
@@ -123,6 +124,7 @@ def run_halt(
         dry_run=dry_run,
         confirmed=confirm,
         steps=all_steps,
+        prev_hash=prev_hash,
     )
 
     signed = False
@@ -181,6 +183,26 @@ def run_verify(
         error = str(exc)
 
     return {"valid": valid, "error": error, "record": record.to_dict()}
+
+
+def run_verify_chain(*, attestation_log_path: str | None = None) -> dict:
+    """Verify an attestation log's full hash chain, not just one record.
+
+    Confirms every record's own signature, that sequence numbers have no
+    gaps, and that each record's ``prev_hash`` matches the content hash of
+    the record before it -- catching a deleted or reordered record that a
+    single-record signature check cannot.
+    """
+    log_path = Path(attestation_log_path or DEFAULT_ATTESTATION_LOG)
+    attestation_log = AttestationLog(log_path)
+    records = attestation_log.read_all()
+    valid, error = attestation_log.verify_chain()
+    return {
+        "valid": valid,
+        "error": error,
+        "record_count": len(records),
+        "attestation_log_path": str(log_path),
+    }
 
 
 def run_status(

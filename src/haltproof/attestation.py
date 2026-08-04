@@ -8,11 +8,21 @@ signing public key is embedded in each record (public keys are, by
 definition, not secret) so ``verify`` can check a record's internal
 consistency on its own; callers that need to confirm the record was signed
 by a *specific trusted* operator key pass that key in explicitly.
+
+Records are also hash-chained: each record embeds ``prev_hash``, the content
+hash of the record immediately before it in the log. A per-record signature
+alone only proves that record's own content is unaltered — it says nothing
+about whether a record was ever deleted or reordered out of the log
+entirely. The chain closes that gap: ``verify_chain`` recomputes the
+expected ``prev_hash`` for every record and confirms sequence numbers have
+no gaps, so a deleted or reordered record breaks the chain even though its
+neighbors' individual signatures still verify on their own.
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import socket
@@ -57,6 +67,7 @@ class AttestationRecord:
     confirmed: bool
     steps: list[dict]
     summary: dict
+    prev_hash: str = ""
     public_key: str = ""
     signature: str = ""
 
@@ -87,8 +98,16 @@ def build_record(
     dry_run: bool,
     confirmed: bool,
     steps: list[StepResult],
+    prev_hash: str = "",
 ) -> AttestationRecord:
-    """Build an unsigned attestation record from a halt operation's results."""
+    """Build an unsigned attestation record from a halt operation's results.
+
+    ``prev_hash`` should be the content hash of the immediately preceding
+    record in this attestation's log (empty string for the first record),
+    obtained from :meth:`AttestationLog.chain_state`. Passing it links this
+    record into the log's hash chain; leaving it empty produces a valid but
+    unchained record (as if it were always the first entry in its own log).
+    """
     step_dicts = [s.to_dict() if isinstance(s, StepResult) else s for s in steps]
     summary = {
         "success": sum(1 for s in step_dicts if s["status"] == "success"),
@@ -111,7 +130,20 @@ def build_record(
         confirmed=confirmed,
         steps=step_dicts,
         summary=summary,
+        prev_hash=prev_hash,
     )
+
+
+def record_content_hash(record: dict | AttestationRecord) -> str:
+    """Return a stable sha256 hex digest over a record's full signed content.
+
+    Computed over every field, including ``signature`` and ``public_key``,
+    so it uniquely identifies this exact signed record. The next record in a
+    log embeds this value as its own ``prev_hash``, chaining the log.
+    """
+    data = record.to_dict() if isinstance(record, AttestationRecord) else dict(record)
+    payload = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def sign_record(record: AttestationRecord, private_key: Ed25519PrivateKey) -> AttestationRecord:
@@ -187,6 +219,22 @@ class AttestationLog:
         last = self._last_record()
         return (last["seq"] + 1) if last else 1
 
+    def chain_state(self) -> tuple[int, str]:
+        """Return ``(next_seq, prev_hash)`` for the next record to append.
+
+        ``prev_hash`` is the content hash of the current last record in the
+        log (empty string if the log is empty), for embedding into the next
+        record via :func:`build_record`.
+        """
+        last = self._last_record()
+        if last is None:
+            return 1, ""
+        return last["seq"] + 1, record_content_hash(last)
+
+    def verify_chain(self) -> tuple[bool, str | None]:
+        """Verify this log's full hash chain. See module-level :func:`verify_chain`."""
+        return verify_chain(self.read_all())
+
     def _last_record(self) -> dict | None:
         if not self.path.exists():
             return None
@@ -233,6 +281,52 @@ class AttestationLog:
             if record.id == attestation_id or str(record.seq) == attestation_id:
                 return record
         return None
+
+
+def verify_chain(records: list[AttestationRecord]) -> tuple[bool, str | None]:
+    """Verify that ``records`` form an intact hash chain in sequence order.
+
+    Checks each record's own signature, that sequence numbers increase by
+    exactly 1 with no gaps, and that each record's ``prev_hash`` matches the
+    content hash of the record immediately before it. A record deleted from
+    the middle of a log, or reordered, breaks this check even though every
+    remaining record's own signature still verifies in isolation — that gap
+    is exactly what per-record signing alone cannot catch.
+
+    Returns ``(True, None)`` if every check passes, or ``(False, <reason>)``
+    describing the first break found.
+    """
+    if not records:
+        return True, None
+
+    ordered = sorted(records, key=lambda r: r.seq)
+
+    for record in ordered:
+        try:
+            verify_record(record)
+        except (SignatureVerificationError, AttestationError) as exc:
+            return False, f"seq {record.seq}: signature invalid ({exc})"
+
+    if ordered[0].prev_hash != "":
+        return False, (
+            f"seq {ordered[0].seq}: expected prev_hash '' for the first record in the "
+            f"log, got {ordered[0].prev_hash!r}"
+        )
+
+    for previous, current in zip(ordered, ordered[1:]):
+        if current.seq != previous.seq + 1:
+            return False, (
+                f"sequence gap: seq {previous.seq} is followed by seq {current.seq}, "
+                f"expected {previous.seq + 1}"
+            )
+        expected_hash = record_content_hash(previous)
+        if current.prev_hash != expected_hash:
+            return False, (
+                f"seq {current.seq}: prev_hash does not match the content hash of seq "
+                f"{previous.seq}; a record may have been deleted, reordered, or edited"
+            )
+
+    return True, None
 
 
 def load_record_from_file(path: str | Path) -> AttestationRecord:

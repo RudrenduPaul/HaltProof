@@ -10,7 +10,9 @@ from haltproof.attestation import (
     AttestationLog,
     SignatureVerificationError,
     build_record,
+    record_content_hash,
     sign_record,
+    verify_chain,
     verify_record,
 )
 from haltproof.backends.base import StepResult, StepStatus
@@ -199,6 +201,146 @@ def test_attestation_log_find_by_id_and_seq(tmp_path, private_key):
     assert log.find(record.id).id == record.id
     assert log.find(str(record.seq)).id == record.id
     assert log.find("does-not-exist") is None
+
+
+def _append_chained(log, private_key, *, operator="alice"):
+    """Append one properly hash-chained, signed record and return it."""
+    seq, prev_hash = log.chain_state()
+    record = sign_record(
+        build_record(
+            seq=seq,
+            operator=operator,
+            action="halt",
+            target_group="grp",
+            backend="slurm",
+            nodes=["node-1"],
+            dry_run=True,
+            confirmed=False,
+            steps=_make_steps(),
+            prev_hash=prev_hash,
+        ),
+        private_key,
+    )
+    log.append(record)
+    return record
+
+
+def test_record_content_hash_changes_with_any_field(private_key):
+    record = build_record(
+        seq=1,
+        operator="alice",
+        action="halt",
+        target_group="grp",
+        backend="slurm",
+        nodes=["node-1"],
+        dry_run=True,
+        confirmed=False,
+        steps=_make_steps(),
+    )
+    signed = sign_record(record, private_key)
+    original_hash = record_content_hash(signed)
+
+    tampered = signed.to_dict()
+    tampered["operator"] = "mallory"
+    assert record_content_hash(tampered) != original_hash
+
+
+def test_chain_state_progression(tmp_path, private_key):
+    log = AttestationLog(tmp_path / "attestations.jsonl")
+
+    seq, prev_hash = log.chain_state()
+    assert (seq, prev_hash) == (1, "")
+
+    first = _append_chained(log, private_key)
+    seq, prev_hash = log.chain_state()
+    assert seq == 2
+    assert prev_hash == record_content_hash(first)
+
+
+def test_verify_chain_accepts_intact_chain(tmp_path, private_key):
+    log = AttestationLog(tmp_path / "attestations.jsonl")
+    for _ in range(3):
+        _append_chained(log, private_key)
+
+    valid, error = log.verify_chain()
+    assert valid is True
+    assert error is None
+
+
+def test_verify_chain_empty_log_is_valid(tmp_path):
+    log = AttestationLog(tmp_path / "attestations.jsonl")
+    assert log.verify_chain() == (True, None)
+
+
+def test_verify_chain_detects_deleted_record(tmp_path, private_key):
+    log = AttestationLog(tmp_path / "attestations.jsonl")
+    for _ in range(3):
+        _append_chained(log, private_key)
+
+    records = log.read_all()
+    # Simulate an attacker (or the operator) deleting the middle record
+    # directly from the log file -- the remaining two records' own
+    # signatures still verify individually.
+    remaining = [records[0], records[2]]
+
+    valid, error = verify_chain(remaining)
+    assert valid is False
+    assert "sequence gap" in error
+
+
+def test_verify_chain_detects_tampered_prev_hash(tmp_path, private_key):
+    # prev_hash is part of a record's own signed payload, so mutating it
+    # after signing breaks that record's signature too (a stronger property
+    # than a naive chain check would give). To isolate the "signature is
+    # intact but the chain link doesn't match" case, sign a second record
+    # with a wrong-but-well-formed prev_hash baked in from the start, as if
+    # it were spliced in from a different log.
+    log = AttestationLog(tmp_path / "attestations.jsonl")
+    first = _append_chained(log, private_key)
+    assert first  # keep the first record's chain state out of the splice below
+
+    spliced = sign_record(
+        build_record(
+            seq=2,
+            operator="alice",
+            action="halt",
+            target_group="grp",
+            backend="slurm",
+            nodes=["node-1"],
+            dry_run=True,
+            confirmed=False,
+            steps=_make_steps(),
+            prev_hash="0" * 64,
+        ),
+        private_key,
+    )
+    log.append(spliced)
+
+    valid, error = log.verify_chain()
+    assert valid is False
+    assert "prev_hash" in error
+
+
+def test_verify_chain_rejects_first_record_with_nonempty_prev_hash(private_key):
+    record = sign_record(
+        build_record(
+            seq=1,
+            operator="alice",
+            action="halt",
+            target_group="grp",
+            backend="slurm",
+            nodes=["node-1"],
+            dry_run=True,
+            confirmed=False,
+            steps=_make_steps(),
+            prev_hash="not-empty",
+        ),
+        private_key,
+    )
+
+    valid, error = verify_chain([record])
+    assert valid is False
+    assert "first record" in error
 
 
 def test_log_file_is_valid_ndjson(tmp_path, private_key):

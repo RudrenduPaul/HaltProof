@@ -1,0 +1,5 @@
+# CI/CD workflow files are the highest-leverage target for a supply-chain
+# compromise (they run with repo secrets and can be modified to exfiltrate
+# them or alter what gets published). Require review on any change here,
+# regardless of what other paths are otherwise unowned.
+/.github/workflows/ @RudrenduPaul

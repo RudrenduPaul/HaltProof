@@ -124,7 +124,7 @@ def halt(
 
 
 @cli.command()
-@click.argument("attestation_ref")
+@click.argument("attestation_ref", required=False)
 @click.option(
     "--attestation-log",
     "attestation_log_path",
@@ -135,14 +135,41 @@ def halt(
     "trusted_key_path",
     help="Path to a trusted Ed25519 public key; if given, the record's signing key must match it.",
 )
+@click.option(
+    "--chain",
+    "chain_mode",
+    is_flag=True,
+    help="Verify the full hash chain of --attestation-log instead of a single record.",
+)
 @_format_option
-def verify(attestation_ref, attestation_log_path, trusted_key_path, output_format, json_flag):
-    """Verify the signature of an attestation record and print its timeline.
+def verify(attestation_ref, attestation_log_path, trusted_key_path, chain_mode, output_format, json_flag):
+    """Verify an attestation record's signature, or a whole log's hash chain.
 
     ATTESTATION_REF is either a path to a file containing the record, or an
-    attestation id / sequence number to look up in the attestation log.
+    attestation id / sequence number to look up in the attestation log. Pass
+    --chain instead to verify that an entire --attestation-log is intact:
+    every record's signature holds, and no record has been deleted or
+    reordered (which a single-record signature check cannot detect).
     """
     fmt = _resolve_format(output_format, json_flag)
+
+    if chain_mode:
+        result = core.run_verify_chain(attestation_log_path=attestation_log_path)
+
+        def render_chain(data: dict) -> None:
+            status_line = "CHAIN INTACT" if data["valid"] else f"CHAIN BROKEN ({data['error']})"
+            click.echo(
+                f"Attestation log {data['attestation_log_path']} "
+                f"({data['record_count']} records): {status_line}"
+            )
+
+        _emit(result, fmt, render_chain)
+        if not result["valid"]:
+            sys.exit(1)
+        return
+
+    if not attestation_ref:
+        raise click.ClickException("ATTESTATION_REF is required unless --chain is given.")
 
     try:
         result = core.run_verify(

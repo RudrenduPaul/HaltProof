@@ -68,6 +68,21 @@ def verify(
 
 
 @mcp.tool()
+def verify_chain(attestation_log_path: str | None = None) -> dict[str, Any]:
+    """Verify an attestation log's full hash chain, not just one record.
+
+    Confirms every record's own signature, that sequence numbers have no
+    gaps, and that each record's prev_hash matches the content hash of the
+    record before it -- detecting a deleted or reordered record that
+    checking one record's signature in isolation cannot catch.
+    """
+    try:
+        return core.run_verify_chain(attestation_log_path=attestation_log_path)
+    except core.HaltProofError as exc:
+        return {"error": str(exc)}
+
+
+@mcp.tool()
 def status(
     backend: str | None = None,
     nodes: list[str] | None = None,
