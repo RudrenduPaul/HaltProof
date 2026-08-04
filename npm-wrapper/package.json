@@ -1,0 +1,47 @@
+{
+  "name": "haltproof-cli",
+  "version": "0.1.0",
+  "description": "Node.js wrapper for the HaltProof CLI: cryptographically auditable emergency-shutdown orchestration for Slurm, Kubernetes, and IPMI/BMC clusters. Requires the Python haltproof-cli package to be installed.",
+  "keywords": [
+    "haltproof",
+    "incident-response",
+    "cluster-management",
+    "slurm",
+    "kubernetes",
+    "ipmi",
+    "compliance-audit",
+    "infrastructure-governance",
+    "attestation",
+    "ed25519",
+    "mcp",
+    "agent-tooling",
+    "cli"
+  ],
+  "homepage": "https://github.com/RudrenduPaul/HaltProof#readme",
+  "bugs": {
+    "url": "https://github.com/RudrenduPaul/HaltProof/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RudrenduPaul/HaltProof.git",
+    "directory": "npm-wrapper"
+  },
+  "license": "MIT",
+  "author": "Rudrendu Paul",
+  "contributors": [
+    "Rudrendu Paul",
+    "Sourav Nandy"
+  ],
+  "bin": {
+    "haltproof": "bin/haltproof.js"
+  },
+  "files": [
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
