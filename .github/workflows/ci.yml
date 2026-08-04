@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package with dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run test suite
+        run: pytest -v --cov=haltproof --cov-report=term-missing
+
+      - name: Verify CLI entry point installs correctly
+        run: haltproof --help
+
+  npm-wrapper-lint:
+    name: npm wrapper sanity check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate package.json
+        working-directory: npm-wrapper
+        run: node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8')); console.log('package.json is valid JSON')"
+
+      - name: Run wrapper with missing Python CLI (expect clear failure)
+        working-directory: npm-wrapper
+        run: |
+          set +e
+          node bin/haltproof.js --help
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "expected non-zero exit when haltproof is not on PATH"
+            exit 1
+          fi

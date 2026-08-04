@@ -1,0 +1,53 @@
+name: No internal docs
+
+# Guards against internal build-process artifacts (CI/CD planning docs,
+# internal review notes, etc.) accidentally landing in this public repo.
+# Fails the build if any of a fixed list of filenames or content patterns
+# associated with internal-only material are present in the tracked tree.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: Scan for internal-only files and phrases
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Fail on forbidden filenames
+        run: |
+          set -e
+          forbidden_files=$(git ls-files \
+            | grep -Ei '(^|/)CLAUDE\.md$|(^|/)TODOS\.md$|(^|/)BRANCH_PROTECTION\.md$|(^|/)docs/security-review-.*\.md$' \
+            || true)
+          if [ -n "$forbidden_files" ]; then
+            echo "Found forbidden internal-only file(s):"
+            echo "$forbidden_files"
+            exit 1
+          fi
+          echo "No forbidden filenames found."
+
+      - name: Fail on forbidden phrases in tracked file contents
+        run: |
+          set -e
+          # This workflow file necessarily contains the forbidden phrases
+          # below as literal grep patterns, so it is excluded from its own
+          # scan; scanning it would always self-match and fail every build.
+          pattern='CEO review|office-hours|eng-review|devex review|CSO review|CSO threat-model|/oss-[0-9]+-|fundrais|investor-outreach|gstack|## Skill routing'
+          self_path=".github/workflows/no-internal-docs.yml"
+          matches=$(git ls-files -z \
+            | xargs -0 grep -IlEi "$pattern" \
+            | grep -v -F "$self_path" \
+            || true)
+          if [ -n "$matches" ]; then
+            echo "Found forbidden internal-process phrase(s) in:"
+            echo "$matches"
+            exit 1
+          fi
+          echo "No forbidden phrases found in tracked files."
