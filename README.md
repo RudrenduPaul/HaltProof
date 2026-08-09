@@ -5,6 +5,8 @@
 [![npm](https://img.shields.io/npm/v/haltproof-cli.svg)](https://www.npmjs.com/package/haltproof-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+![HaltProof demo](docs/assets/haltproof-demo.gif)
+
 HaltProof is an emergency-shutdown **orchestration** and **cryptographic
 audit-proof** layer for compute clusters. It does not implement a new
 low-level shutdown mechanism. It coordinates cluster primitives you already
@@ -15,8 +17,6 @@ Use it for incident response, change-management evidence, and compliance
 reporting: for example, generating an auditable "human oversight" trail for
 compute infrastructure actions, the kind of evidence required by frameworks
 like the EU AI Act's human-oversight provisions.
-
-![HaltProof demo](docs/assets/haltproof-demo.gif)
 
 ## Why
 
