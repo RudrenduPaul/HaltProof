@@ -16,6 +16,8 @@ reporting: for example, generating an auditable "human oversight" trail for
 compute infrastructure actions, the kind of evidence required by frameworks
 like the EU AI Act's human-oversight provisions.
 
+![HaltProof demo](docs/assets/haltproof-demo.gif)
+
 ## Why
 
 Operators already have the tools to drain a Slurm partition, cordon a
@@ -149,6 +151,8 @@ Reference below is generated from the CLI's actual `--help` output.
 
 Drain, isolate, and power-fence `TARGET_GROUP`.
 
+![haltproof keygen, halt, and verify in sequence](docs/demo-halt-verify.gif)
+
 ```
 Options:
   --nodes TEXT             Comma-separated explicit node list, overrides
@@ -212,6 +216,8 @@ Options:
 
 Generate an Ed25519 keypair for attestation signing. The private key is
 written with `0600` permissions and is never printed or logged.
+
+![haltproof keygen followed by status --json](docs/demo-keygen-status.gif)
 
 ```
 Options:
