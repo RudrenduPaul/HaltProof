@@ -5,6 +5,9 @@
 [![npm](https://img.shields.io/npm/v/haltproof-cli.svg)](https://www.npmjs.com/package/haltproof-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+**Signed, dry-run-by-default shutdown orchestration for Slurm, Kubernetes,
+and IPMI clusters, with a tamper-evident audit trail.**
+
 ![HaltProof demo](docs/assets/haltproof-demo.gif)
 
 HaltProof is an emergency-shutdown **orchestration** and **cryptographic
@@ -17,6 +20,13 @@ Use it for incident response, change-management evidence, and compliance
 reporting: for example, generating an auditable "human oversight" trail for
 compute infrastructure actions, the kind of evidence required by frameworks
 like the EU AI Act's human-oversight provisions.
+
+```bash
+pip install haltproof-cli
+```
+
+(Full install options, including the npm wrapper, are in
+[Install](#install) below.)
 
 ## Why
 
@@ -50,12 +60,18 @@ pip install haltproof-cli
 npm install -g haltproof-cli
 ```
 
-The npm package requires the Python `haltproof-cli` package to already be
-installed and on `PATH`. It is a thin `execFileSync` wrapper, not a
-reimplementation. If it can't find the Python CLI, it prints an actionable
-error and exits non-zero rather than silently doing something else.
+> [!WARNING]
+> The npm package requires the Python `haltproof-cli` package to already be
+> installed and on `PATH`. It is a thin `execFileSync` wrapper, not a
+> reimplementation. If it can't find the Python CLI, it prints an actionable
+> error and exits non-zero rather than silently doing something else.
 
 ## Quickstart
+
+> [!IMPORTANT]
+> `haltproof halt` is a no-op without `--confirm`. It prints the plan and
+> writes a signed dry-run attestation, but nothing destructive runs until
+> you pass `--confirm` explicitly.
 
 ```bash
 # Generate a signing key for attestations (do this once).
