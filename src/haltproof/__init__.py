@@ -7,4 +7,4 @@ ran. It does not implement any new low-level shutdown mechanism; it is an
 orchestration and audit-proof layer on top of tools operators already trust.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"
