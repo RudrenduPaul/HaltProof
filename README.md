@@ -405,4 +405,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a new backend and
 
 ## License
 
-[MIT](LICENSE) © Rudrendu Paul
+[MIT](LICENSE) © Rudrendu Paul and Sourav Nandy
