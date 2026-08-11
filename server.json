@@ -1,0 +1,40 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.RudrenduPaul/haltproof",
+  "description": "Fail-closed deterministic checks and hash-chained receipts for AI agent outputs via MCP.",
+  "repository": {
+    "url": "https://github.com/RudrenduPaul/HaltProof",
+    "source": "github"
+  },
+  "version": "0.1.3",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "haltproof-cli",
+      "version": "0.1.3",
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--from",
+          "value": "haltproof-cli"
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "valueHint": "script_name",
+          "value": "haltproof"
+        },
+        {
+          "type": "positional",
+          "valueHint": "subcommand",
+          "value": "mcp-server"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

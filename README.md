@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.RudrenduPaul/haltproof -->
+
 # HaltProof
 
 [![CI](https://github.com/RudrenduPaul/HaltProof/actions/workflows/ci.yml/badge.svg)](https://github.com/RudrenduPaul/HaltProof/actions/workflows/ci.yml)
