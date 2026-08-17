@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "haltproof-cli"
-version = "0.1.1"
+dynamic = ["version"]
 description = "Dry-run-by-default emergency-shutdown orchestration and Ed25519-signed, hash-chained attestation logging for Slurm, Kubernetes, and IPMI/BMC clusters, with an MCP server for direct AI agent invocation."
 readme = "README.md"
 license = { text = "MIT" }
@@ -69,6 +69,9 @@ Issues = "https://github.com/RudrenduPaul/HaltProof/issues"
 
 [project.scripts]
 haltproof = "haltproof.cli:main"
+
+[tool.hatch.version]
+path = "src/haltproof/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/haltproof"]

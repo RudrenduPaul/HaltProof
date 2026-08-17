@@ -1,4 +1,4 @@
-<div align="center">
+<!-- mcp-name: io.github.RudrenduPaul/haltproof -->
 
 # HaltProof
 
@@ -9,13 +9,41 @@ Emergency-shutdown orchestration for Slurm, Kubernetes, and IPMI clusters, with 
 [![npm](https://img.shields.io/npm/v/haltproof-cli.svg)](https://www.npmjs.com/package/haltproof-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-</div>
+**Signed, dry-run-by-default shutdown orchestration for Slurm, Kubernetes,
+and IPMI clusters, with a tamper-evident audit trail.**
 
-<!-- Demo GIF pending: docs/demo.gif (haltproof keygen -> haltproof halt dry-run against Kubernetes -> haltproof verify --chain). Add the asset and restore the image line below once available.
-![Terminal recording: haltproof keygen generating an Ed25519 signing key, haltproof halt running a dry-run drain against a Kubernetes backend, and haltproof verify --chain confirming the attestation log's hash chain is intact](docs/demo.gif)
--->
+![HaltProof demo](docs/assets/haltproof-demo.gif)
 
-HaltProof does not implement a new low-level shutdown mechanism. It coordinates cluster primitives you already run and trust (`scontrol`, `kubectl`, `ipmitool`) behind one interface, refuses to execute anything destructive without an explicit `--confirm`, and signs a tamper-evident record of what was targeted, what ran, and who authorized it.
+HaltProof is an emergency-shutdown **orchestration** and **cryptographic
+audit-proof** layer for compute clusters. It does not implement a new
+low-level shutdown mechanism. It coordinates cluster primitives you already
+trust (Slurm, Kubernetes, IPMI/BMC) and produces a signed, tamper-evident
+record of exactly what was targeted, what ran, and who authorized it.
+
+```bash
+pip install haltproof-cli
+```
+
+(Full install options, including the npm wrapper, are in
+[Install](#install) below.)
+
+## Why
+
+Operators already have the tools to drain a Slurm partition, cordon a
+Kubernetes node pool, or power-fence a physical host over IPMI. What's
+usually missing is:
+
+1. **One consistent interface** across those tools during an incident,
+   instead of three different command sets under pressure.
+2. **A dry-run-by-default safety rail**, so a mistyped target group doesn't
+   take down the wrong nodes.
+3. **A signed, tamper-evident record** of what happened: who ran it, what
+   commands were issued, against which nodes, whether each step succeeded,
+   and whether the record itself has been altered or has a piece missing.
+
+HaltProof is that layer. It calls out to `scontrol`, `kubectl`, and
+`ipmitool` (or `mcp`-invokable equivalents) and wraps every invocation in an
+Ed25519-signed, hash-chained attestation.
 
 ## Install
 
@@ -29,7 +57,11 @@ An npm wrapper is also published for Node.js-based tooling and agent runtimes:
 npm install -g haltproof-cli
 ```
 
-The npm package is a thin wrapper around the Python CLI. It requires `haltproof-cli` to already be installed and on `PATH`; if it can't find the Python CLI, it prints an actionable error and exits non-zero instead of guessing.
+> [!WARNING]
+> The npm package requires the Python `haltproof-cli` package to already be
+> installed and on `PATH`. It is a thin `execFileSync` wrapper, not a
+> reimplementation. If it can't find the Python CLI, it prints an actionable
+> error and exits non-zero rather than silently doing something else.
 
 ## Table of Contents
 
@@ -55,6 +87,11 @@ The npm package is a thin wrapper around the Python CLI. It requires `haltproof-
 - **Tested.** 76 tests, 90% overall line coverage, run and confirmed in this audit with `pytest -v --cov=haltproof --cov-report=term-missing`. Backend tests mock `subprocess` calls; none of them require a real cluster.
 
 ## Quickstart
+
+> [!IMPORTANT]
+> `haltproof halt` is a no-op without `--confirm`. It prints the plan and
+> writes a signed dry-run attestation, but nothing destructive runs until
+> you pass `--confirm` explicitly.
 
 ```bash
 # Generate a signing key for attestations (do this once).
@@ -114,20 +151,27 @@ Reference below is regenerated from the CLI's actual `--help` output.
 
 Drain, isolate, and power-fence `TARGET_GROUP`. Dry-run is the default; nothing destructive runs without `--confirm`.
 
-| Flag | Description |
-|---|---|
-| `--nodes TEXT` | Comma-separated explicit node list, overrides config group lookup. |
-| `--backend TEXT` | Backend to use: `kubernetes`, `slurm`, or `ipmi`. |
-| `--confirm` | Actually execute the halt. Without this, dry-run only. |
-| `--reason TEXT` | Reason recorded for drain operations. |
-| `--operator-id TEXT` | Operator identity to record. Defaults to the OS user. |
-| `--config TEXT` | Path to a `haltproof.toml` config file. |
-| `--attestation-log TEXT` | Path to the attestation log file. |
-| `--attestation-key TEXT` | Path to the Ed25519 private key used to sign the attestation. |
-| `--no-sign` | Skip signing (not recommended); still logs the record unsigned. |
-| `--remote-collector TEXT` | Optional URL to POST the signed attestation to. |
-| `--format [human\|json]` | Output format. |
-| `--json` | Shorthand for `--format=json`. |
+![haltproof keygen, halt, and verify in sequence](docs/demo-halt-verify.gif)
+
+```
+Options:
+  --nodes TEXT             Comma-separated explicit node list, overrides
+                           config group lookup.
+  --backend TEXT           Backend to use: kubernetes, slurm, or ipmi.
+  --confirm                Actually execute the halt. Without this, dry-run
+                           only.
+  --reason TEXT            Reason recorded for drain operations.
+  --operator-id TEXT       Operator identity to record. Defaults to OS user.
+  --config TEXT            Path to a haltproof.toml config file.
+  --attestation-log TEXT   Path to the attestation log file.
+  --attestation-key TEXT   Path to the Ed25519 private key used to sign the
+                           attestation.
+  --no-sign                Skip signing (not recommended); still logs the
+                           record unsigned.
+  --remote-collector TEXT  Optional URL to POST the signed attestation to.
+  --format [human|json]    Output format.
+  --json                   Shorthand for --format=json.
+```
 
 ### `haltproof verify [ATTESTATION_REF]`
 
@@ -158,12 +202,15 @@ Show backend auto-detection results and, optionally, target-group health.
 
 Generate an Ed25519 keypair for attestation signing. The private key is written with `0600` permissions and is never printed or logged.
 
-| Flag | Description |
-|---|---|
-| `--output TEXT` | Path to write the private key to. |
-| `--force` | Overwrite an existing key at the output path. |
-| `--format [human\|json]` | Output format. |
-| `--json` | Shorthand for `--format=json`. |
+![haltproof keygen followed by status --json](docs/demo-keygen-status.gif)
+
+```
+Options:
+  --output TEXT          Path to write the private key to.
+  --force                Overwrite an existing key at the output path.
+  --format [human|json]  Output format.
+  --json                 Shorthand for --format=json.
+```
 
 ### `haltproof mcp-server`
 
@@ -272,6 +319,9 @@ Yes, `--no-sign` skips signing but still writes the record to the log. This is m
 **Does the attestation log need a central server?**
 No. It's a local, append-only NDJSON file by default. `--remote-collector` optionally POSTs each signed record to a URL you configure, for teams that want a central copy, but verification doesn't depend on that server being reachable.
 
+**What happens if two operators run `halt` at the same time against the same attestation log?**
+Appends are file-locked (`fcntl.flock` on POSIX) so writes don't interleave, but sequence numbers are assigned by reading the log at the moment each command starts. Point both operators at backend-specific or per-incident log files if you need strict per-operation serialization.
+
 **What license is HaltProof under, and can I use it commercially?**
 MIT. You can use, modify, and redistribute it, including commercially, as long as the copyright notice and license text stay attached. See [LICENSE](LICENSE).
 
@@ -289,4 +339,4 @@ pytest -v --cov=haltproof --cov-report=term-missing
 
 ## License
 
-[MIT](LICENSE) © Rudrendu Paul
+[MIT](LICENSE) © Rudrendu Paul and Sourav Nandy
