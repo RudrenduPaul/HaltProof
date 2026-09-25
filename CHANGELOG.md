@@ -7,6 +7,10 @@ both distributions -- the PyPI package (`haltproof-cli`, Python,
 they implement the same command surface; entries note which distribution
 they apply to.
 
+## [npm 0.1.2] - 2026-09-25
+
+npm 0.1.2: republished through npm Trusted Publishing with provenance, no code changes
+
 ## [0.1.2] - PyPI only -- fix stale `--version` output, decouple version source
 
 **Known issue on the currently published `0.1.1` PyPI release**: `haltproof

@@ -1,6 +1,6 @@
 {
   "name": "haltproof-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Node.js wrapper for the HaltProof CLI: dry-run-by-default emergency-shutdown orchestration for Slurm, Kubernetes, and IPMI/BMC clusters, with Ed25519-signed attestations. Requires the Python haltproof-cli package installed and on PATH.",
   "keywords": [
     "haltproof",
