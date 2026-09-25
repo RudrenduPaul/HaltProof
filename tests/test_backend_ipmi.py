@@ -27,7 +27,7 @@ def test_power_fence_dry_run_builds_command_without_running():
     assert results[0].status == StepStatus.PLANNED
     command = results[0].command
     assert command[:4] == ["ipmitool", "-I", "lanplus", "-H"]
-    assert "bmc-1.example.com" in command
+    assert command[command.index("-H") + 1] == "bmc-1.example.com"
     assert command[-3:] == ["chassis", "power", "off"]
 
 
